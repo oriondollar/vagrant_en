@@ -15,7 +15,7 @@ To train a model, run the following code in a terminal `python scripts/train.py`
 
 ## Generation
 
-You can generate molecules with the repo by calling `python scripts/gen.py --name vagrant --ckpt_epoch 100`. The `--name` and `--ckpt_epoch` arguments are rquired. Additional options can be passed to select a sampling method or additional hyperparameters. For instance, to use robust sampling and calculate the coherence of each sample, you would call `python scripts/gen.py --name vagrant --ckpt_epoch 100 --sample_method robust --calc_coherence`.
+You can generate molecules by calling `python scripts/gen.py --name vagrant --ckpt_epoch 100`. The `--name` and `--ckpt_epoch` arguments are rquired. Additional options can be passed to select a sampling method or additional hyperparameters. For instance, to use robust sampling and calculate the coherence of each sample, you would call `python scripts/gen.py --name vagrant --ckpt_epoch 100 --sample_method robust --calc_coherence`.
 
 ## Conformers
 
