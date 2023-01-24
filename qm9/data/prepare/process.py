@@ -2,6 +2,7 @@ import os
 import torch
 import tarfile
 import logging
+import numpy as np
 from tqdm import trange
 from torch.nn.utils.rnn import pad_sequence
 
@@ -59,12 +60,13 @@ def process_xyz_files(data, process_file_fn, calc_bonds, file_ext=None, file_idx
 
     # Convert list-of-dicts to dict-of-lists
     molecules = {prop: [mol[prop] for mol in molecules] for prop in props}
+    max_nodes = np.max([charges.shape[0] for charges in molecules['charges']])
 
     # If stacking is desireable, pad and then stack.
     if stack:
         for k, v in molecules.items():
             if k == 'adjacency' or k == 'bonds':
-                molecules[k] = pad_bonds(v)
+                molecules[k] = pad_bonds(v, max_nodes=max_nodes)
             elif k != 'smile':
                 if v[0].dim() > 0:
                     molecules[k] = pad_sequence(v, batch_first=True)
@@ -95,8 +97,8 @@ def process_xyz_gdb9(datafile, calc_bonds):
         dataset_info = get_dataset_info('qm9', remove_h=False)
         adjacency, bonds = get_bonds(torch.tensor(atom_positions), torch.tensor(atom_charges), smile, dataset_info)
     else:
-        adjacency = torch.empty(1,)
-        bonds = torch.empty(1,)
+        adjacency = torch.zeros(1,1)
+        bonds = torch.zeros(1,1)
 
     prop_strings = ['tag', 'index', 'A', 'B', 'C', 'mu', 'alpha', 'homo', 'lumo', 'gap', 'r2', 'zpve', 'U0', 'U', 'H', 'G', 'Cv']
     prop_strings = prop_strings[1:]

@@ -5,14 +5,17 @@ from qm9.args import init_argparse
 from qm9.data.collate import collate_fn
 
 def retrieve_dataloaders(batch_size, num_workers=1, seq_rep='selfies', max_length=125,
-                         return_datasets=False, remove_h=False, calc_bonds=False, force_download=False):
+                         return_datasets=False, remove_h=False, calc_bonds=False, force_download=False,
+                         reprocess_data=False):
     # Initialize dataloader
     args = init_argparse('qm9')
     args.force_download = force_download
+    args.reprocess_data = reprocess_data
     args, datasets, num_species, charge_scale = initialize_datasets(args, args.datadir, 'qm9',
                                                                     calc_bonds=calc_bonds,
                                                                     subtract_thermo=args.subtract_thermo,
                                                                     force_download=args.force_download,
+                                                                    reprocess=args.reprocess_data,
                                                                     seq_rep=seq_rep,
                                                                     max_length=max_length,
                                                                     remove_h=remove_h)

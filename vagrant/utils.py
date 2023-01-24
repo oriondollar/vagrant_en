@@ -1,14 +1,45 @@
 import re
 import numpy as np
+import selfies as sf
+from scipy.stats import entropy
 from itertools import permutations
 from sklearn.preprocessing import MinMaxScaler
 from qm9.rdkit_functions import build_xae_molecule
 
 from rdkit import Chem
+from rdkit import DataStructs
+from rdkit.Chem import AllChem
 from rdkit.Chem.rdchem import BondType
 
 import torch
 from torch.autograd import Variable
+
+################################################################################
+################################## METRICS #####################################
+################################################################################
+
+def calc_entropy(samples):
+    es = []
+    for i in range(samples.shape[1]):
+        probs, bin_edges = np.histogram(samples[:,i], bins=1000, range=(-5., 5.), density=True)
+        es.append(entropy(probs))
+    return np.array(es)
+
+def calc_coherence(gen, regen, regen_idxs, dist=False):
+    coherence = []
+    cur_idx = 0
+    for i, smi in enumerate(gen):
+        if i in regen_idxs:
+            regen_smi = regen[cur_idx]
+            sim = tanimoto_sim(smi, regen_smi)
+            if dist:
+                coherence.append(1-sim)
+            else:
+                coherence.append(sim)
+            cur_idx += 1
+        else:
+            coherence.append(None)
+    return coherence
 
 ################################################################################
 ############################# STRING PROCESSING ################################
@@ -108,6 +139,10 @@ def tokenizer(smile):
     assert smile == ''.join(tokens), ("{} could not be joined".format(smile))
     return tokens
 
+def standardize_smiles(smiles):
+    smiles = [sf.decoder(sf.encoder(smi)) for smi in smiles]
+    return [Chem.MolToSmiles(Chem.MolFromSmiles(smi)) for smi in smiles]
+
 ################################################################################
 ######################### ENCODED STRING PROCESSING ############################
 ################################################################################
@@ -128,12 +163,13 @@ def subsequent_mask(size):
 
 bond_dict = {BondType.SINGLE: 1, BondType.DOUBLE: 2, BondType.TRIPLE: 3, BondType.AROMATIC: 4}
 
-def pad_bonds(bonds):
-    max_nodes = 0
-    for mat in bonds:
-        n_nodes = mat.shape[0]
-        if n_nodes > max_nodes:
-            max_nodes = n_nodes
+def pad_bonds(bonds, max_nodes=None):
+    if max_nodes is None:
+        max_nodes = 0
+        for mat in bonds:
+            n_nodes = mat.shape[0]
+            if n_nodes > max_nodes:
+                max_nodes = n_nodes
     padded_mat = torch.zeros(len(bonds), max_nodes, max_nodes).long()
     for i, mat in enumerate(bonds):
         n_nodes = mat.shape[0]
@@ -261,3 +297,142 @@ def get_rdkit_adj_mats(smile, dataset_info):
             a[k,l] = 1
             e[k,l] = bond_type
     return x, a, e
+
+################################################################################
+############################## DATA UTILS ######################################
+################################################################################
+
+def compute_mean_mad(dataloaders, label_property):
+    values = dataloaders['train'].dataset.data[label_property]
+    meann = torch.mean(values)
+    ma = torch.abs(values - meann)
+    mad = torch.mean(ma)
+    return meann, mad
+
+def get_adj_matrix(n_nodes, batch_size, device, edges_dic={}):
+    if n_nodes in edges_dic:
+        edges_dic_b = edges_dic[n_nodes]
+        if batch_size in edges_dic_b:
+            return edges_dic_b[batch_size]
+        else:
+            # get edges for a single sample
+            rows, cols = [], []
+            for batch_idx in range(batch_size):
+                for i in range(n_nodes):
+                    for j in range(n_nodes):
+                        rows.append(i + batch_idx*n_nodes)
+                        cols.append(j + batch_idx*n_nodes)
+
+    else:
+        edges_dic[n_nodes] = {}
+        return get_adj_matrix(n_nodes, batch_size, device, edges_dic=edges_dic)
+
+    edges = [torch.LongTensor(rows).to(device), torch.LongTensor(cols).to(device)]
+    return edges
+
+def preprocess_nodes(one_hot, charges, charge_power, charge_scale, device):
+    charge_tensor = (charges.unsqueeze(-1) / charge_scale).pow(
+        torch.arange(charge_power + 1., device=device, dtype=torch.float32))
+    charge_tensor = charge_tensor.view(charges.shape + (1, charge_power + 1))
+    atom_scalars = (one_hot.unsqueeze(-1) * charge_tensor).view(charges.shape[:2] + (-1,))
+    return atom_scalars
+
+def preprocess_batch(batch, args):
+    batch_size, n_nodes, _ = batch['positions'].size()
+    atom_mask = batch['atom_mask'].view(batch_size * n_nodes, -1).to(args.device, args.dtype)
+    atom_positions = batch['positions'].view(batch_size * n_nodes, -1).to(args.device, args.dtype)
+    edge_mask = batch['edge_mask'].to(args.device, args.dtype)
+    one_hot = batch['one_hot'].to(args.device, args.dtype)
+    charges = batch['charges'].to(args.device, args.dtype)
+    y_true = batch['src'].to(args.device)
+    y0 = batch['tgt'].to(args.device)
+    y_mask = batch['tgt_mask'].to(args.device)
+    nodes = preprocess_nodes(one_hot, charges, args.charge_power, args.charge_scale, args.device)
+    nodes = nodes.view(batch_size * n_nodes, -1)
+    edges = get_adj_matrix(n_nodes, batch_size, args.device)
+    props = batch[args.property].to(args.device, args.dtype)
+    scaled_props = ((props - args.meann) / args.mad).view(-1,1)
+    if args.include_bonds:
+        edge_attr = batch['one_hot_edges'].contiguous().view(batch_size*n_nodes*n_nodes,-1).to(args.device, args.dtype)
+    else:
+        edge_attr = None
+    return nodes, atom_positions, edges, edge_attr, atom_mask,\
+           edge_mask, n_nodes, y_true, y0, y_mask, props, scaled_props
+
+def preprocess_batch_from_inputs(pos, one_hot, charges, one_hot_edges, args):
+    batch_positions = pos
+    batch_one_hot = one_hot.to(args.device, args.dtype)
+    batch_charges = charges.to(args.device, args.dtype)
+    batch_size, n_nodes, _ = batch_positions.size()
+    atom_positions = batch_positions.view(batch_size * n_nodes, -1).to(args.device, args.dtype)
+    atom_mask = batch_charges > 0
+    edge_mask = atom_mask.unsqueeze(1) * atom_mask.unsqueeze(2)
+    diag_mask = ~torch.eye(edge_mask.size(1), dtype=torch.bool).unsqueeze(0).to(args.device)
+    edge_mask *= diag_mask
+    edge_mask = edge_mask.view(batch_size * n_nodes * n_nodes, 1).to(args.device, args.dtype)
+    atom_mask = atom_mask.view(batch_size * n_nodes, -1).to(args.device, args.dtype)
+    nodes = preprocess_nodes(batch_one_hot, batch_charges, args.charge_power, args.charge_scale, args.device)
+    nodes = nodes.view(batch_size * n_nodes, -1)
+    edges = get_adj_matrix(n_nodes, batch_size, args.device)
+    if args.include_bonds:
+        edge_attr = one_hot_edges.contiguous().view(batch_size*n_nodes*n_nodes,-1).to(args.device, args.dtype)
+    else:
+        edge_attr = None
+    return nodes, atom_positions, edges, edge_attr, atom_mask, edge_mask, n_nodes
+
+
+################################################################################
+############################## TRAINING UTILS ##################################
+################################################################################
+
+class KLAnnealer:
+    """
+    Scales KL weight (beta) linearly according to the number of epochs
+    """
+    def __init__(self, kl_low, kl_high, n_epochs, start_epoch):
+        self.kl_low = kl_low
+        self.kl_high = kl_high
+        self.n_epochs = n_epochs
+        self.start_epoch = start_epoch
+
+        self.kl = (self.kl_high - self.kl_low) / (self.n_epochs - self.start_epoch)
+
+    def __call__(self, epoch):
+        k = (epoch - self.start_epoch) if epoch >= self.start_epoch else 0
+        beta = self.kl_low + k * self.kl
+        if beta > self.kl_high:
+            beta = self.kl_high
+        else:
+            pass
+        return beta
+
+################################################################################
+############################### RDKIT UTILS ####################################
+################################################################################
+
+def is_valid(smi):
+    if smi is not None and smi != '':
+        try:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is not None:
+                return True
+        except:
+            return False
+    return False
+
+def tanimoto_sim(mol1, mol2, strict=False):
+    mol1 = Chem.MolFromSmiles(mol1)
+    mol2 = Chem.MolFromSmiles(mol2)
+    if mol1 is None or mol2 is None:
+        if strict:
+            return 1
+        else:
+            return None
+    else:
+        fp1 = AllChem.GetMorganFingerprint(mol1,2)
+        fp2 = AllChem.GetMorganFingerprint(mol2,2)
+        tan_sim = DataStructs.TanimotoSimilarity(fp1, fp2)
+        return tan_sim
+
+def most_common(lst):
+    return max(set(lst), key=lst.count)

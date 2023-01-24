@@ -3,7 +3,7 @@ import logging
 
 from qm9.data.prepare.qm9 import download_dataset_qm9
 
-def prepare_dataset(datadir, dataset, calc_bonds, subset=None, splits=None, cleanup=True, force_download=False):
+def prepare_dataset(datadir, dataset, calc_bonds, subset=None, splits=None, cleanup=False, force_download=False, reprocess=False):
     # If datasets have subsets,
     if subset:
         dataset_dir = [datadir, dataset, subset]
@@ -39,6 +39,13 @@ def prepare_dataset(datadir, dataset, calc_bonds, subset=None, splits=None, clea
         logging.info('Dataset does not exist. Downloading!')
         if dataset.lower().startswith('qm9'):
             download_dataset_qm9(datadir, dataset, calc_bonds, splits, cleanup=cleanup)
+        else:
+            raise ValueError(
+                'Repo currently only configured to work with QM9')
+    elif reprocess:
+        print('reprocessing data...')
+        if dataset.lower().startswith('qm9'):
+            download_dataset_qm9(datadir, dataset, calc_bonds, splits, cleanup=cleanup, download=False)
         else:
             raise ValueError(
                 'Repo currently only configured to work with QM9')

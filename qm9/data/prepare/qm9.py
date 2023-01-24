@@ -10,7 +10,7 @@ from os.path import join as join
 from qm9.data.prepare.process import process_xyz_files, process_xyz_gdb9
 from qm9.data.prepare.utils import download_data, is_int, cleanup_file
 
-def download_dataset_qm9(datadir, dataname, calc_bonds=False, splits=None, calculate_thermo=True, exclude=True, cleanup=True):
+def download_dataset_qm9(datadir, dataname, calc_bonds=False, splits=None, calculate_thermo=True, exclude=True, cleanup=False, download=True):
     # Define directory for which data will be output.
     gdb9dir = join(*[datadir, dataname])
 
@@ -27,12 +27,14 @@ def download_dataset_qm9(datadir, dataname, calc_bonds=False, splits=None, calcu
     # gdb9_tar_data =
     # tardata = tarfile.open(gdb9_tar_file, 'r')
     # files = tardata.getmembers()
-    urllib.request.urlretrieve(gdb9_url_data, filename=gdb9_tar_data)
-    logging.info('GDB9 dataset downloaded successfully!')
+    if download:
+        print('downloading data...')
+        urllib.request.urlretrieve(gdb9_url_data, filename=gdb9_tar_data)
+        logging.info('GDB9 dataset downloaded successfully!')
 
     # If splits are not specified, automatically generate them.
     if splits is None:
-        splits = gen_splits_gdb9(gdb9dir, cleanup)
+        splits = gen_splits_gdb9(gdb9dir, download, cleanup)
 
     # Process GDB9 dataset, and return dictionary of splits
     gdb9_data = {}
@@ -43,7 +45,7 @@ def download_dataset_qm9(datadir, dataname, calc_bonds=False, splits=None, calcu
     # Subtract thermochemical energy if desired.
     if calculate_thermo:
         # Download thermochemical energy from GDB9 dataset, and then process it into a dictionary
-        therm_energy = get_thermo_dict(gdb9dir, cleanup)
+        therm_energy = get_thermo_dict(gdb9dir, download, cleanup)
 
         # For each of train/validation/test split, add the thermochemical energy
         for split_idx, split_data in gdb9_data.items():
@@ -57,11 +59,12 @@ def download_dataset_qm9(datadir, dataname, calc_bonds=False, splits=None, calcu
 
     logging.info('Processing/saving complete!')
 
-def gen_splits_gdb9(gdb9dir, cleanup=True):
+def gen_splits_gdb9(gdb9dir, download, cleanup=True):
     logging.info('Splits were not specified! Automatically generating.')
     gdb9_url_excluded = 'https://springernature.figshare.com/ndownloader/files/3195404'
     gdb9_txt_excluded = join(gdb9dir, 'uncharacterized.txt')
-    urllib.request.urlretrieve(gdb9_url_excluded, filename=gdb9_txt_excluded)
+    if download:
+        urllib.request.urlretrieve(gdb9_url_excluded, filename=gdb9_txt_excluded)
 
     # First get list of excluded indices
     excluded_strings = []
@@ -110,13 +113,14 @@ def gen_splits_gdb9(gdb9dir, cleanup=True):
 
     return splits
 
-def get_thermo_dict(gdb9dir, cleanup=True):
+def get_thermo_dict(gdb9dir, download, cleanup=True):
     # Download thermochemical energy
     logging.info('Downloading thermochemical energy.')
     gdb9_url_thermo = 'https://springernature.figshare.com/ndownloader/files/3195395'
     gdb9_txt_thermo = join(gdb9dir, 'atomref.txt')
 
-    urllib.request.urlretrieve(gdb9_url_thermo, filename=gdb9_txt_thermo)
+    if download:
+        urllib.request.urlretrieve(gdb9_url_thermo, filename=gdb9_txt_thermo)
 
     # Loop over file of thermochemical energies
     therm_targets = ['zpve', 'U0', 'U', 'H', 'G', 'Cv']

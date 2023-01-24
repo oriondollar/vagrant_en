@@ -11,8 +11,8 @@ from qm9.data.dataset import ProcessedDataset
 from qm9.data.prepare import prepare_dataset
 
 def initialize_datasets(args, datadir, dataset, calc_bonds=False, subset=None, splits=None,
-                        force_download=False, subtract_thermo=False, seq_rep='selfies',
-                        max_length=125, remove_h=False):
+                        force_download=False, reprocess=False, subtract_thermo=False,
+                        seq_rep='selfies', max_length=125, remove_h=False):
     print('initializing...')
     # Set the number of points based upon the arguments
     num_pts = {'train': args.num_train,
@@ -20,7 +20,7 @@ def initialize_datasets(args, datadir, dataset, calc_bonds=False, subset=None, s
 
     # Download and process dataset. Returns datafiles.
     datafiles = prepare_dataset(
-        datadir, dataset, calc_bonds, subset, splits, force_download=force_download)
+        datadir, dataset, calc_bonds, subset, splits, force_download=force_download, reprocess=reprocess)
 
     # Load downloaded/processed datasets
     datasets = {}
