@@ -11,7 +11,7 @@ The training script automatically downloads the QM9 dataset and stores it in `qm
 
 ## Training
 
-To train a model, run the following code in a terminal `python scripts/train.py`. The default hyperparameters match the hyperparameters used to train the version of Vagrant we report results for in the submission.
+To train a model, run the following code in a terminal `python scripts/train.py`. The default hyperparameters match the hyperparameters used to train the version of Vagrant reported in the submission.
 
 ## Generation
 
