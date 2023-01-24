@@ -107,7 +107,7 @@ def train(args):
         args.in_edge_nf = 0
 
     ### Build model
-    model = Vagrant(args, predict_property=args.predict_property, ckpt_file='checkpoints/vagrant/3000_vagrant.ckpt')
+    model = Vagrant(args, predict_property=args.predict_property)
     print('vagrant built...')
     print(model)
 
