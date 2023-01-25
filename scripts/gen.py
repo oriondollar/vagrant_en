@@ -153,7 +153,7 @@ if __name__ == '__main__':
     parser.add_argument('--radius', default=0.1, type=float)
 
     ### Data Parameters
-    parser.add_argument('--batch_size', default=100, type=int)
+    parser.add_argument('--batch_size', default=5, type=int)
     parser.add_argument('--num_workers', default=0, type=int)
     parser.add_argument('--seq_rep', default='selfies', 
                         choices=['selfies', 'smiles'], type=str)

@@ -17,7 +17,7 @@ from vagrant.utils import compute_mean_mad, preprocess_nodes, get_adj_matrix,\
 
 def run_epoch(model, args, optimizer, lr_scheduler,
               kl_annealer, loader, partition='train'):
-    epoch_log = {'loss': 0, 'counter': 0}
+    losses = []
     kld_losses = []
     bce_losses = []
     mse_losses = []
@@ -52,19 +52,17 @@ def run_epoch(model, args, optimizer, lr_scheduler,
         else:
             mae_score = 0
 
-        epoch_log['loss'] += loss.item() * args.batch_size
-        epoch_log['counter'] += args.batch_size
+        losses.append(loss.item())
         kld_losses.append(kld.item())
         bce_losses.append(bce.item())
         mse_losses.append(mse.item())
         mae_scores.append(mae_score)
-        avg_loss = epoch_log['loss'] / epoch_log['counter']
 
         if i % args.log_freq == 0:
             print(partition + ": Epoch %d \t Iteration %d \t loss %.4f" % (model.n_epochs, i,
-                  epoch_log['loss'][-1] / args.batch_size))
+                np.mean(losses[-10:])))
 
-    return avg_loss, np.mean(kld_losses), np.mean(bce_losses), np.mean(mse_losses), np.mean(mae_scores)
+    return np.mean(losses), np.mean(kld_losses), np.mean(bce_losses), np.mean(mse_losses), np.mean(mae_scores)
 
 
 def train(args):
@@ -117,7 +115,7 @@ def train(args):
     kl_annealer = KLAnnealer(args.beta_init, args.beta, args.kl_anneal_stop, args.kl_anneal_start)
 
     ### Set up logging file
-    run_log = {'epochs': [], 'losess': [], 'kld_losses': [], 'bce_losses': [], 'mse_losses': [],
+    run_log = {'epochs': [], 'losses': [], 'kld_losses': [], 'bce_losses': [], 'mse_losses': [],
                'mae_scores': [], 'best_val': 1e10, 'best_test': 1e10, 'best_epoch': 0}
 
 
@@ -134,7 +132,7 @@ def train(args):
                                                             kl_annealer, loader=dataloaders['test'],
                                                             partition='test')
             run_log['epochs'].append(epoch)
-            run_log['losess'].append(test_loss)
+            run_log['losses'].append(test_loss)
             run_log['kld_losses'].append(kld)
             run_log['bce_losses'].append(bce)
             run_log['mse_losses'].append(mse)
