@@ -139,7 +139,7 @@ if __name__ == '__main__':
 
     ### I/O Parameters
     parser.add_argument('--name', required=True, type=str)
-    parser.add_argument('--ckpt_epoch', default='100', type=str)
+    parser.add_argument('--ckpt_epoch', default='1000', type=str)
     parser.add_argument('--sample_dir', default='samples', type=str)
 
     ### Sample Parameters
