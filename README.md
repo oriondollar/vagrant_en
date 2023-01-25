@@ -19,4 +19,4 @@ You can generate molecules by calling `python scripts/gen.py --name vagrant --ck
 
 ## Conformers
 
-We also include code for generating structural conformers from the sampled molecules. These functions can be found in `vagrant/conformers.py`. Generating conformers for some samples can be slow. This may be the case when calculating coherence during generation and can some times cause errors. We plan on implementing a time out feature to address this issue before publishing a public-facing code base.
+We also include code for generating structural conformers from the sampled molecules. These functions can be found in `vagrant/conformers.py`. Generating conformers for some samples can be slow. This may be the case when calculating coherence and can some times cause errors during generation. 
