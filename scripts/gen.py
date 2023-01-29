@@ -34,7 +34,7 @@ def gen(args):
 
     # Set up storage
     os.makedirs(args.sample_dir, exist_ok=True)
-    gen_name = '{}_{}_{}_{}'.format(args.name, args.property, args.sample_method, args.ckpt_epoch)
+    gen_name = '{}_{}_{}'.format(args.name, args.sample_method, args.ckpt_epoch)
     os.makedirs(os.path.join(args.sample_dir, gen_name), exist_ok=True)
     gen_path = os.path.join(args.sample_dir, gen_name, '{}_gen.csv'.format(args.name))
 
@@ -143,7 +143,7 @@ if __name__ == '__main__':
     parser.add_argument('--sample_dir', default='samples', type=str)
 
     ### Sample Parameters
-    parser.add_argument('--n_samples', default=100, type=int)
+    parser.add_argument('--n_samples', default=10000, type=int)
     parser.add_argument('--sample_method', choices=['direct', 'robust'],
                         default='direct', type=str)
     parser.add_argument('--decode_method', choices=['greedy', 'temp'],
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     parser.add_argument('--radius', default=0.1, type=float)
 
     ### Data Parameters
-    parser.add_argument('--batch_size', default=5, type=int)
+    parser.add_argument('--batch_size', default=100, type=int)
     parser.add_argument('--num_workers', default=0, type=int)
     parser.add_argument('--seq_rep', default='selfies', 
                         choices=['selfies', 'smiles'], type=str)
