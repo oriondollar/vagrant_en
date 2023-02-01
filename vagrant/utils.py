@@ -143,6 +143,10 @@ def standardize_smiles(smiles):
     smiles = [sf.decoder(sf.encoder(smi)) for smi in smiles]
     return [Chem.MolToSmiles(Chem.MolFromSmiles(smi)) for smi in smiles]
 
+def chunks(l, n):
+    for i in range(0, len(l), n):
+        yield l[i:i+n]
+
 ################################################################################
 ######################### ENCODED STRING PROCESSING ############################
 ################################################################################

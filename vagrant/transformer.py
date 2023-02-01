@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-
 class Trans(nn.Module):
     def __init__(self, n_heads, d_model, d_ff, p_dropout):
         super().__init__()
@@ -18,6 +17,24 @@ class Trans(nn.Module):
         y = self.sublayer[0](y, lambda y: self.self_attn(query=y, key=y, value=y, mask=mask))
         y = self.sublayer[1](y, lambda y: self.cross_attn(query=y, key=z, value=z, mask=mask))
         return self.sublayer[2](y, self.ff)
+
+class Predictor(nn.Module):
+    def __init__(self, d_latent, width, depth, act_fn):
+        super().__init__()
+        pred_layers = []
+        for i in range(depth):
+            if i == 0:
+                pred_layers.append(nn.Linear(d_latent, width))
+                pred_layers.append(act_fn)
+            elif i == depth - 1:
+                pred_layers.append(nn.Linear(width, 1))
+            else:
+                pred_layers.append(nn.Linear(width, width))
+                pred_layers.append(act_fn)
+        self.predict = nn.Sequential(*pred_layers)
+
+    def forward(self, z):
+        return self.predict(z)
 
 class MultiHeadedAttention(nn.Module):
     "Multihead attention implementation (based on Vaswani et al.)"

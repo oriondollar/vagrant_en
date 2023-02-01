@@ -12,13 +12,14 @@ from vagrant.gcl import EGCL, unsorted_segment_sum
 from vagrant.utils import make_std_mask, decode_mols, is_valid, most_common
 from vagrant.transformer import Trans, Deconv, LayerNorm, Embeddings,\
                                 SublayerConnection, PositionwiseFeedForward,\
-                                PositionalEncoding, clones
+                                PositionalEncoding, Predictor, clones
 
 class Vagrant(nn.Module):
-    def __init__(self, args, predict_property=False, ckpt_file=None):
+    def __init__(self, args, predict_property=True, ckpt_file=None):
         super(Vagrant, self).__init__()
         self.args = args
         self.predict_property = predict_property
+        self.n_properties = len(args.properties)
         self.act_fn = nn.SiLU()
         self.device = args.device
 
@@ -34,7 +35,7 @@ class Vagrant(nn.Module):
         if ckpt_file is None:
             self.build()
         else:
-            self.load(ckpt_file)
+            self.load(ckpt_file, distributed=args.distributed)
 
     def build(self):
         ### Encoder
@@ -65,17 +66,9 @@ class Vagrant(nn.Module):
 
         ### Property Predictor
         if self.predict_property:
-            pred_layers = []
-            for i in range(self.args.pred_depth):
-                if i == 0:
-                    pred_layers.append(nn.Linear(self.args.d_latent, self.args.pred_width))
-                    pred_layers.append(self.act_fn)
-                elif i == self.args.pred_depth - 1:
-                    pred_layers.append(nn.Linear(self.args.pred_width, 1))
-                else:
-                    pred_layers.append(nn.Linear(self.args.pred_width, self.args.pred_width))
-                    pred_layers.append(self.act_fn)
-            self.pred = nn.Sequential(*pred_layers)
+            for i in range(0, self.n_properties):
+                self.add_module("pred_%d" % i, Predictor(self.args.d_latent, self.args.pred_width,
+                                                         self.args.pred_depth, self.act_fn))
         self.to(self.args.device)
 
     def reparameterize(self, mu, logvar):
@@ -106,15 +99,21 @@ class Vagrant(nn.Module):
         y_logits = self.gen(y)
         return y_logits
 
+    def predict(self, z):
+        prop_predictions = []
+        for i in range(0, self.n_properties):
+            prop_predictions.append(self._modules["pred_%d" % i](z))
+        return prop_predictions
+
     def forward(self, h0, x, edges, edge_attr, node_mask, edge_mask, n_nodes, y0, y_mask):
         mu, logvar = self.encode(h0, x, edges, edge_attr, node_mask, edge_mask, n_nodes)
         z = self.reparameterize(mu, logvar)
         y_logits = self.decode(y0, z, y_mask)
         if self.predict_property:
-            pred_prop = self.pred(z)
+            prop_predictions = self.predict(z)
         else:
-            pred_prop = None
-        return mu, logvar, y_logits, pred_prop
+            prop_predictions = None
+        return mu, logvar, y_logits, prop_predictions
 
     ##########################################
     ############ VAGRANT METHODS #############
@@ -211,22 +210,25 @@ class Vagrant(nn.Module):
         batch_size = self.args.batch_size
 
         gen = []
-        pred_props = torch.empty(0, 1)
+        pred_props = torch.empty(0, self.n_properties)
         sampled_z = torch.empty(0,128)
-        for i in trange(n_samples // batch_size):
+        for i in trange(0, n_samples, batch_size):
             if not from_z:
                 batch_z = torch.randn(batch_size, self.args.d_latent)
             else:
-                batch_z = z[i*batch_size:(i+1)*batch_size]
+                batch_z = z[i:i+batch_size]
             sampled_z = torch.cat([sampled_z, batch_z])
             if self.args.cuda:
                 batch_z = batch_z.cuda()
-            if self.args.predict_property:
-                pred_prop = self.pred(batch_z)
-                pred_prop = ((self.args.mad * pred_prop.detach().cpu()) + self.args.meann)
-                pred_props = torch.cat([pred_props, pred_prop])
+            if self.predict_property:
+                batch_pred_props = torch.empty(batch_size, self.n_properties)
+                for j, prop in enumerate(self.args.properties):
+                    pred_prop = self._modules["pred_%d" % j](batch_z)
+                    pred_prop = ((self.args.mads[prop] * pred_prop.detach().cpu()) + self.args.means[prop])
+                    batch_pred_props[:,j] = pred_prop
+                pred_props = torch.cat([pred_props, batch_pred_props])
             else:
-                pred_props = torch.cat([pred_props, torch.zeros(batch_size,1)])
+                pred_props = torch.cat([pred_props, torch.zeros(batch_size,self.n_properties)])
             if self.args.decode_method == 'greedy':
                 y_hat = self.greedy_decode(batch_z)
             elif self.args.decode_method == 'temp':
@@ -242,7 +244,7 @@ class Vagrant(nn.Module):
                       high_entropy_dims, low_entropy_dims,
                       from_z=False, z=None):
         gen = []
-        pred_props = torch.empty(n_samples, 1)
+        pred_props = torch.empty(n_samples, self.n_properties)
         sampled_z = torch.empty(n_samples, 128)
         for i in trange(n_samples):
             if not from_z:
@@ -257,9 +259,12 @@ class Vagrant(nn.Module):
                 perturbation[high_entropy_dims] += torch.randn(high_entropy_dims.shape[0]) * radius
                 structure[j,:] = perturbation
             structure = structure.cuda()
-            if self.args.predict_property:
-                perturbed_pred_props = self.pred(structure)
-                perturbed_pred_props = ((self.args.mad * perturbed_pred_props.detach().cpu()) + self.args.meann)
+            if self.predict_property:
+                batch_pred_props = torch.empty(n_perturbations, self.n_properties)
+                for j, prop in enumerate(self.args.properties):
+                    perturbed_pred_prop = self._modules["pred_%d" % j](structure)
+                    perturbed_pred_prop = ((self.args.mads[prop] * perturbed_pred_props.detach().cpu()) + self.args.means[prop])
+                    batch_pred_props[:,j] = perturbed_pred_prop
             if self.args.decode_method == 'greedy':
                 y_hat = self.greedy_decode(structure)
             elif self.args.decode_method == 'temp':
@@ -274,10 +279,11 @@ class Vagrant(nn.Module):
             for j, smi in enumerate(batch_gen):
                 if smi == sampled_smile:
                     pred_idxs.append(j)
-            if self.args.predict_property:
-                pred_props[i,:] = perturbed_pred_props[pred_idxs].mean()
+            if self.predict_property:
+                for j in range(self.n_properties):
+                    pred_props[i,j] = batch_pred_props[pred_idxs,j].mean()
             else:
-                pred_props[i,:] = torch.zeros(1,)
+                pred_props[i,:] = torch.zeros(1, self.n_properties)
             sampled_z[i,:] = torch.mean(structure[pred_idxs,:], dim=0)
         return gen, pred_props, sampled_z
 
@@ -288,6 +294,7 @@ class Vagrant(nn.Module):
         print_str += '\t# Trans layers: {}\n'.format(self.args.n_dec)
         print_str += '\tmodel dimensionality: {}\n'.format(self.args.d_model)
         print_str += '\tlatent dimensionality: {}\n'.format(self.args.d_latent)
-        if self.args.predict_property:
-            print_str += '\ttarget property: {}'.format(self.args.property)
-        return print_str
+        if self.predict_property:
+            for i, prop in enumerate(self.args.properties):
+                print_str += '\ttarget property {}: {}\n'.format(i+1, prop)
+        return print_str[:-1]

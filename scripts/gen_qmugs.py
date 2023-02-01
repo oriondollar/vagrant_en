@@ -4,16 +4,17 @@ sys.path.append(os.getcwd())
 import argparse
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 from configs.datasets_config import get_dataset_info
 
 import torch
 
-from qm9 import dataset
-from qmugs.utils import prop_key
+from qmugs import utils as qmugs_utils
+from qmugs.utils import prop_key, compute_mean_mad, preprocess_batch
+
 from vagrant.model import Vagrant
 from vagrant.conformers import smiles_to_coords
-from vagrant.utils import standardize_smiles, compute_mean_mad, preprocess_batch,\
-                          calc_entropy, preprocess_batch_from_inputs, calc_coherence
+from vagrant.utils import calc_entropy, preprocess_batch_from_inputs, calc_coherence
 
 def init_model(args, ckpt):
     model = Vagrant(args, predict_property=args.predict_property, ckpt_file=ckpt)
@@ -21,8 +22,8 @@ def init_model(args, ckpt):
     model.args.decode_method = args.decode_method
     model.args.temp = args.temp
     model.args.batch_size = args.batch_size
-    model.args.mad = args.mad
-    model.args.meann = args.meann
+    model.args.mads = args.mads
+    model.args.means = args.means
     model.args.device = args.device
     model.args.dtype = args.dtype
     return model
@@ -41,30 +42,17 @@ def gen(args):
 
     # Load data
     args.properties = [prop_key[prop] for prop in args.properties]
-    datasets, dataloaders, charge_scale, data_args = dataset.retrieve_dataloaders(args.batch_size,
-                                                                 args.num_workers,
-                                                                 args.seq_rep,
-                                                                 args.max_length,
-                                                                 return_datasets=True,
-                                                                 remove_h=args.remove_h)
-
-    included_species = datasets['train'].included_species
-    bond_types = torch.tensor([1,2,3,4])
-    dataset_info = get_dataset_info('qm9', remove_h=args.remove_h)
-
-    args.vocab = data_args.vocab
-    args.inv_vocab = data_args.inv_vocab
-    args.vocab_weights = data_args.vocab_weights.to(args.device)
-    args.d_vocab = data_args.d_vocab
-    meann, mad = compute_mean_mad(dataloaders, args.property)
-    args.meann = meann
-    args.mad = mad
-    print('data loaded...')
+    if len(args.properties) > 0:
+        args.predict_property = True
+    else:
+        args.predict_property = False
+    dataset_info = get_dataset_info('qmugs', remove_h=args.remove_h)
+    raw_train, raw_val, raw_test, raw_string, raw_props, args = qmugs_utils.load_datasets(args)
+    args.means, args.mads = compute_mean_mad(raw_props)
 
     # Load model
     ckpt = 'checkpoints/{}/{}_{}.ckpt'.format(args.name, args.ckpt_epoch, args.name)
     model = init_model(args, ckpt)
-    args.include_bonds = model.args.include_bonds
     args.charge_power = model.args.charge_power
     args.charge_scale = model.args.charge_scale
     print(model)
@@ -73,10 +61,16 @@ def gen(args):
     try:
         train_mems = np.load('checkpoints/{}/train_mems.npy'.format(args.name))
     except FileNotFoundError:
-        train_loader = dataloaders['train']
+        print('calculating train mems...')
+        transform = qmugs_utils.QMugsTransform(dataset_info, args.device)
+        dataset = qmugs_utils.QMugsDataset(raw_train, raw_string, raw_props, transform=transform)
+        train_loader = qmugs_utils.QMugsDataLoader(dataset, batch_size=args.batch_size, shuffle=False)
         train_mems = np.empty((0,128))
 
-        for i, data in enumerate(train_loader):
+        n_train_batches = 1000
+        for i, data in enumerate(tqdm(train_loader, total=n_train_batches)):
+            if i >= n_train_batches:
+                break
             nodes, atom_positions, edges, edge_attr, atom_mask,\
             edge_mask, n_nodes, y_true, y0, y_mask, props, scaled_props = preprocess_batch(data, args)
             mu, _ = model.encode(nodes, atom_positions, edges, edge_attr, atom_mask, edge_mask, n_nodes)
@@ -142,6 +136,7 @@ if __name__ == '__main__':
     parser.add_argument('--name', required=True, type=str)
     parser.add_argument('--ckpt_epoch', default='1000', type=str)
     parser.add_argument('--sample_dir', default='samples', type=str)
+    parser.add_argument('--distributed', default=False, action='store_true')
 
     ### Sample Parameters
     parser.add_argument('--n_samples', default=10000, type=int)
@@ -154,13 +149,12 @@ if __name__ == '__main__':
     parser.add_argument('--radius', default=0.1, type=float)
 
     ### Data Parameters
+    parser.add_argument('--data_dir', default='./data/qmugs', type=str)
     parser.add_argument('--batch_size', default=100, type=int)
     parser.add_argument('--num_workers', default=0, type=int)
-    parser.add_argument('--seq_rep', default='selfies', 
-                        choices=['selfies', 'smiles'], type=str)
     parser.add_argument('--max_length', default=125, type=int)
     parser.add_argument('--remove_h', default=False, action='store_true')
-    parser.add_argument('--include_bonds', default=False, action='store_true')
+    parser.add_argument('--max_heavy_atoms', default=50, type=int)
     parser.add_argument('--properties', nargs='+', default=[])
     parser.add_argument('--calc_coherence', default=False, action='store_true')
     args = parser.parse_args()

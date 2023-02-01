@@ -120,7 +120,6 @@ class GeomDrugsTransform(object):
 
 def collate_fn(batch):
     batch = {prop: batch_stack([mol[prop] for mol in batch]) for prop in batch[0].keys()}
-
     atom_mask = batch['atom_mask']
 
     # Obtain edges
@@ -131,9 +130,7 @@ def collate_fn(batch):
     diag_mask = ~torch.eye(edge_mask.size(1), dtype=torch.bool,
                            device=edge_mask.device).unsqueeze(0)
     edge_mask *= diag_mask
-
     batch['edge_mask'] = edge_mask.view(batch_size * n_nodes * n_nodes, 1)
-
     return batch
 
 def batch_stack(props):

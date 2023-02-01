@@ -15,6 +15,7 @@ from vagrant.loss import vae_loss, mae
 from vagrant.utils import compute_mean_mad, preprocess_nodes, get_adj_matrix,\
                           preprocess_batch, KLAnnealer
 
+
 def run_epoch(model, args, optimizer, lr_scheduler,
               kl_annealer, loader, partition='train'):
     losses = []
@@ -44,7 +45,6 @@ def run_epoch(model, args, optimizer, lr_scheduler,
         if partition == 'train':
             loss.backward()
             optimizer.step()
-            lr_scheduler.step()
 
         if args.predict_property:
             mae_score = mae(props.detach().cpu().numpy().reshape(-1,1),
@@ -62,6 +62,7 @@ def run_epoch(model, args, optimizer, lr_scheduler,
             print(partition + ": Epoch %d \t Iteration %d \t loss %.4f" % (model.n_epochs, i,
                 np.mean(losses[-10:])))
 
+    lr_scheduler.step()
     return np.mean(losses), np.mean(kld_losses), np.mean(bce_losses), np.mean(mse_losses), np.mean(mae_scores)
 
 
@@ -75,6 +76,8 @@ def train(args):
     args.ckpt_dir = os.path.join(args.ckpt_dir, args.name)
     os.makedirs(args.ckpt_dir, exist_ok=True)
     args.log_fn = os.path.join(args.ckpt_dir, 'log.json')
+    if len(args.properties) == 1:
+        args.property = args.properties[0]
 
     ### Load data and set model arguments
     dataloaders, charge_scale, data_args = dataset.retrieve_dataloaders(args.batch_size,
@@ -175,10 +178,7 @@ if __name__ == '__main__':
     ### Model Hyperparameters
     parser.add_argument('--d_model', default=256, type=int) 
     parser.add_argument('--d_latent', default=128, type=int)
-    parser.add_argument('--property', default='alpha', 
-                        choices=['alpha', 'gap', 'homo', 'lumo',
-                                 'mu', 'Cv', 'G', 'H', 'r2', 'U',
-                                 'U0', 'zpve']) 
+    parser.add_argument('--properties', nargs='+', default=['alpha'])
     parser.add_argument('--predict_property', default=False, action='store_true')
 
     ### Encoder Hyperparameters
