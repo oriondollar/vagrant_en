@@ -6,9 +6,13 @@ from torch.nn.utils.rnn import pad_sequence
 from vagrant.utils import get_bonds, pad_bonds
 from morfeus.conformer import ConformerEnsemble
 
-def conformer_to_data(conformer, included_species):
+def conformer_to_data(conformer, included_species, with_h):
     positions = torch.tensor(conformer.coordinates).unsqueeze(0)
     charges = torch.tensor(conformer.elements).unsqueeze(0)
+    if not with_h:
+        mask = (charges != 1).view(-1)
+        charges = charges[:,mask]
+        positions = positions[:,mask,:]
     one_hot = charges.unsqueeze(-1) == included_species.unsqueeze(0).unsqueeze(0)
     return positions, charges, one_hot
 
@@ -17,22 +21,19 @@ def smiles_to_coords(smiles, included_species, bond_types, dataset_info):
     succeeded = []
     for i in trange(len(smiles)):
         smi = smiles[i]
-        try:
-            ce = ConformerEnsemble.from_rdkit(smi, optimize="MMFF94")
-            ce.prune_rmsd()
-            ce.sort()
-            conformer = ce.conformers[0]
-            positions, charges, _ = conformer_to_data(conformer, included_species)
-            positions = positions.squeeze(0)
-            charges = charges.squeeze(0)
-            adjacency, bonds = get_bonds(positions, charges, smi, dataset_info)
-            mols['positions'].append(positions)
-            mols['charges'].append(charges)
-            mols['bonds'].append(torch.tensor(bonds))
-            mols["smiles"].append(smi)
-            succeeded.append(i)
-        except:
-            pass
+        ce = ConformerEnsemble.from_rdkit(smi, optimize="MMFF94")
+        ce.prune_rmsd()
+        ce.sort()
+        conformer = ce.conformers[0]
+        positions, charges, _ = conformer_to_data(conformer, included_species, dataset_info['with_h'])
+        positions = positions.squeeze(0)
+        charges = charges.squeeze(0)
+        adjacency, bonds = get_bonds(positions, charges, smi, dataset_info)
+        mols['positions'].append(positions)
+        mols['charges'].append(charges)
+        mols['bonds'].append(torch.tensor(bonds))
+        mols["smiles"].append(smi)
+        succeeded.append(i)
     smiles = mols['smiles']
     del mols['smiles']
     for k, v in mols.items():
