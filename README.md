@@ -1,5 +1,5 @@
 # E(3) Equivariant Translation VAE for 3D Molecular Design
-This repo contains the training and generation code for the model described in the attached submission to ICML 2023. We briefly describe how to use the repo below.
+This repo contains the training and generation code for the model described in the paper, _"Efficient 3D Molecular Design with an E(3) Invariant Transformer VAE"_.
 
 ## Installation
 
