@@ -49,6 +49,8 @@ def gen(args):
     dataset_info = get_dataset_info('qmugs', remove_h=args.remove_h)
     raw_train, raw_val, raw_test, raw_string, raw_props, args = qmugs_utils.load_datasets(args)
     args.means, args.mads = compute_mean_mad(raw_props)
+    included_species = torch.Tensor(dataset_info['atomic_nb'])[None, :].int().view(-1,)
+    bond_types = torch.tensor([1,2,3,4])
 
     # Load model
     ckpt = 'checkpoints/{}/{}_{}.ckpt'.format(args.name, args.ckpt_epoch, args.name)

@@ -225,7 +225,7 @@ class Vagrant(nn.Module):
                 for j, prop in enumerate(self.args.properties):
                     pred_prop = self._modules["pred_%d" % j](batch_z)
                     pred_prop = ((self.args.mads[prop] * pred_prop.detach().cpu()) + self.args.means[prop])
-                    batch_pred_props[:,j] = pred_prop
+                    batch_pred_props[:,j] = pred_prop.view(-1,)
                 pred_props = torch.cat([pred_props, batch_pred_props])
             else:
                 pred_props = torch.cat([pred_props, torch.zeros(batch_size,self.n_properties)])
@@ -235,8 +235,7 @@ class Vagrant(nn.Module):
                 y_hat = self.temp_decode(batch_z, temp=self.args.temp)
             batch_gen = decode_mols(y_hat, self.args.inv_vocab)
             gen += batch_gen
-        if self.args.seq_rep == 'selfies':
-            gen = [sf.decoder(selfie) for selfie in gen]
+        gen = [sf.decoder(selfie) for selfie in gen]
         gen = [Chem.MolToSmiles(Chem.MolFromSmiles(smi)) if is_valid(smi) else smi for smi in gen]
         return gen, pred_props, sampled_z
 
@@ -264,14 +263,13 @@ class Vagrant(nn.Module):
                 for j, prop in enumerate(self.args.properties):
                     perturbed_pred_prop = self._modules["pred_%d" % j](structure)
                     perturbed_pred_prop = ((self.args.mads[prop] * perturbed_pred_props.detach().cpu()) + self.args.means[prop])
-                    batch_pred_props[:,j] = perturbed_pred_prop
+                    batch_pred_props[:,j] = perturbed_pred_prop.view(-1,)
             if self.args.decode_method == 'greedy':
                 y_hat = self.greedy_decode(structure)
             elif self.args.decode_method == 'temp':
                 y_hat = self.temp_decode(structure, temp=self.args.temp)
             batch_gen = decode_mols(y_hat, self.args.inv_vocab)
-            if self.args.seq_rep == 'selfies':
-                batch_gen = [sf.decoder(selfie) for selfie in batch_gen]
+            batch_gen = [sf.decoder(selfie) for selfie in batch_gen]
             batch_gen = [Chem.MolToSmiles(Chem.MolFromSmiles(smi)) if is_valid(smi) else smi for smi in batch_gen]
             sampled_smile = most_common(batch_gen)
             gen.append(sampled_smile)

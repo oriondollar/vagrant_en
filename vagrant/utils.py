@@ -187,7 +187,10 @@ def get_bonds(positions, charges, smile, dataset_info):
 
     # Filter out hydrogens
     n_heavy_atoms = x_rd.shape[0]
-    heavy_idxs = torch.where(x_dist > 0)[0]
+    if dataset_info['with_h']:
+        heavy_idxs = torch.where(x_dist > 0)[0]
+    else:
+        heavy_idxs = torch.where(x_dist > -1)[0]
     assert n_heavy_atoms == heavy_idxs.shape[0]
 
     # Create new tensors for reduced dist bond info
@@ -283,13 +286,21 @@ def get_dist_adj_mats(positions, charges, dataset_info):
 
 def get_rdkit_adj_mats(smile, dataset_info):
     mol = Chem.MolFromSmiles(smile)
-    n_atoms = mol.GetNumHeavyAtoms()
+    if not dataset_info['with_h']:
+        mol = Chem.RemoveHs(mol)
+    n_atoms = mol.GetNumAtoms()
     x = torch.zeros(n_atoms).long()
     a = torch.zeros(n_atoms, n_atoms).long()
     e = torch.zeros(n_atoms, n_atoms).long()
+    cur_idx = 0
     for j in range(n_atoms):
         atom = mol.GetAtomWithIdx(j)
-        x[j] = dataset_info['charge2idx'][atom.GetAtomicNum()]
+        atom_num = atom.GetAtomicNum()
+        if not dataset_info['with_h'] and atom_num == 1:
+            continue
+        else:
+            x[cur_idx] = dataset_info['charge2idx'][atom_num]
+            cur_idx += 1
     for bond in mol.GetBonds():
         k = bond.GetBeginAtomIdx()
         l = bond.GetEndAtomIdx()

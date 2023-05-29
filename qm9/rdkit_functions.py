@@ -29,7 +29,7 @@ def build_xae_molecule(positions, atom_types, dataset_info):
             pair = sorted([atom_types[i], atom_types[j]])
             if dataset_info['name'] == 'qm9' or dataset_info['name'] == 'qm9_second_half' or dataset_info['name'] == 'qm9_first_half':
                 order = get_bond_order(atom_decoder[pair[0]], atom_decoder[pair[1]], dists[i, j])
-            elif dataset_info['name'] == 'geom':
+            elif dataset_info['name'] == 'geom' or dataset_info['name'] == 'qmugs':
                 order = geom_predictor((atom_decoder[pair[0]], atom_decoder[pair[1]]), dists[i, j], limit_bonds_to_one=True)
             # TODO: a batched version of get_bond_order to avoid the for loop
             if order > 0:
